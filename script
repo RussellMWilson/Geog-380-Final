@@ -1,0 +1,148 @@
+#Upkeep
+import arcpy
+
+environment = raw_input("Please enter your workspace!:")
+
+
+arcpy.env.workspace = environment
+
+
+
+        
+arcpy.env.overwriteOutput = True
+##########
+
+
+#Get input
+yearsIN = raw_input("How many years in the future would you like to see the threat of flooding?:")
+
+years = int(yearsIN)
+
+#Because data is from 1994
+years = years + 24
+
+
+years = years / 10
+
+#DataLayers
+
+#flood = "FEMA_Flood_Zone_1994.shp"
+#landSite = "Environmentally_Endangered_Land_Site.shp"
+#park = "National_and_State_Park_or_Preserve.shp"
+flood = raw_input("Please input one of your data layers (3 total) (Default: FEMA_Flood_Zone_1994.shp):")
+landSite = raw_input("Please input your next data layer (Default: Environmentally_Endangered_Land_Site.shp):")
+park = raw_input("Please input your last data layer (Default: National_and_State_Park_or_Preserve.shp):")
+
+
+
+#intersect the Layers
+arcpy.Intersect_analysis([flood, landSite], "intersectFL")
+arcpy.Intersect_analysis([flood, park], "intersectFP")
+arcpy.Intersect_analysis([park, landSite], "intersectPL")
+
+
+#new Intersect Layers
+floodLand = "intersectFL.shp"
+floodPark = "intersectFP.shp"
+parkLand = "intersectPL.shp"
+
+
+#Add and calculate field for Floodzones
+fields = ["FZONE", "ELEV","prelimTLFZ"]
+arcpy.AddField_management(flood, "prelimTLFZ", "SHORT")
+with arcpy.da.UpdateCursor(flood, fields) as cursor:
+    for row in cursor:
+            if row[0] == "OPW":
+                row[2] = 0
+            elif row[0] == "OUT":
+                row[2] = 0
+            elif row[0] == "X":
+                row[2] = 10
+                if row[1] > 0:
+                    row[2] += row[1]
+            elif row[0] == "X-500":
+                row[2] = 30
+                if row[1] > 0:
+                    row[2] += row[1]
+            elif row[0] == "A":
+                row[2] = 50
+                if row[1] > 0:
+                    row[2] += row[1]
+            elif row[0] == "AE":
+                row[2] = 50
+                if row[1] > 0:
+                    row[2] += row[1]
+            elif row[0] == "VE":
+                row[2] = 60
+                if row[1] > 0:
+                    row[2] += row[1]
+            elif row[0] == "AH":
+                row[2]= 50
+                if row[1] > 0:
+                    row[2] += row[1]
+            else:
+                row[2] = 40
+            cursor.updateRow(row)
+
+#Add and calculate field for Flood and Endangered land sites intersect
+arcpy.AddField_management(floodLand, "prelimTLFL", "SHORT")
+with arcpy.da.UpdateCursor(floodLand, "prelimTLFL") as cursor:
+    for row in cursor:
+        row[0] = 20
+
+        cursor.updateRow(row)
+
+
+#Add and calculate field for Flood and Parks intersect
+arcpy.AddField_management(floodPark, "prelimTLFP", "SHORT")
+with arcpy.da.UpdateCursor(floodPark, "prelimTLFP") as cursor:
+    for row in cursor:
+        row[0] = 10
+
+        cursor.updateRow(row)
+
+
+#Add and calculate field for Parks and Endangered land sites intersect
+arcpy.AddField_management(parkLand, "prelimTLPL", "SHORT")
+with arcpy.da.UpdateCursor(parkLand, "prelimTLPL") as cursor:
+    for row in cursor:
+        row[0] = 30
+
+        cursor.updateRow(row)
+
+
+
+#Union the intersect layers and the flood layer
+in_layers = [flood,floodLand,floodPark,parkLand]
+
+arcpy.Union_analysis(in_layers,"finalLayer")
+
+fc = "finalLayer.shp"
+fieldsFinal = ["prelimTLFL","prelimTLFP","prelimTLPL","prelimTLFZ","ThreatLvl"]
+
+arcpy.AddField_management(fc,"ThreatLvl", "SHORT")
+
+with arcpy.da.UpdateCursor(fc, fieldsFinal) as cursor:
+    for row in cursor:
+        if row[3] == 0:
+            row[4] == 0
+        else:
+            row[4] = row[0] + row[1] + row[2] + row[3] + years
+
+        cursor.updateRow(row)
+
+
+#add the layer to a map
+mxd = arcpy.mapping.MapDocument(r"C:/Users/rmw3/Desktop/380Final/map.mxd")
+
+df = arcpy.mapping.ListDataFrames(mxd, "Layers")[0]
+
+addLayer = arcpy.mapping.Layer(r"C:/Users/rmw3/Desktop/380Final/finalLayer.shp")
+
+arcpy.mapping.AddLayer(df, addLayer, "BOTTOM")
+
+mxd.saveACopy(r"C:/Users/rmw3/Desktop/380Final/map2.mxd")
+
+
+
+
